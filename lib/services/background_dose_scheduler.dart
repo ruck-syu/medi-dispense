@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:android_alarm_manager_plus/android_alarm_manager_plus.dart';
 import 'package:flutter/widgets.dart';
 import 'package:intl/intl.dart';
@@ -53,6 +55,7 @@ class BackgroundDoseScheduler {
 
 @pragma('vm:entry-point')
 Future<void> backgroundDoseAlarmCallback() async {
+  DartPluginRegistrant.ensureInitialized();
   WidgetsFlutterBinding.ensureInitialized();
 
   final now = DateTime.now();
