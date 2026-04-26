@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../models/models.dart';
 import '../providers/database_provider.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -90,14 +91,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
               if (_medNameController.text.isNotEmpty &&
                   _medDosageController.text.isNotEmpty &&
                   _medCauseController.text.isNotEmpty) {
+                final medicine = Medicine(
+                  name: _medNameController.text,
+                  dosage: _medDosageController.text,
+                  cause: _medCauseController.text,
+                );
                 Provider.of<DatabaseProvider>(
                   context,
                   listen: false,
-                ).addMedicine(
-                  _medNameController.text,
-                  _medDosageController.text,
-                  _medCauseController.text,
-                );
+                ).addMedicine(medicine);
                 Navigator.pop(ctx);
               }
             },

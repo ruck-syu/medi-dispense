@@ -25,11 +25,11 @@ class DatabaseProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> addMedicine(String name, String dosage, String cause) async {
-    final med = Medicine(name: name, dosage: dosage, cause: cause);
-    final savedMed = await DatabaseHelper.instance.addMedicine(med);
+  Future<Medicine> addMedicine(Medicine medicine) async {
+    final savedMed = await DatabaseHelper.instance.addMedicine(medicine);
     medicines.add(savedMed);
     notifyListeners();
+    return savedMed;
   }
 
   Future<void> deleteMedicine(int id) async {

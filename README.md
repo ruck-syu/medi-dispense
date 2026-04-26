@@ -74,6 +74,28 @@ To build the physical dispenser, you will need:
    ```
 > **Note for iOS:** Ensure you have configured your Apple Developer account to sign the app, and that you have granted Bluetooth permissions when prompted.
 
+### 3. Offline AI Setup (Risk + Voice)
+The AI features now run fully inside Flutter with no backend, no API calls, and no `.pkl` files.
+
+1. Risk prediction is recreated in Dart:
+   - adherence `>= 80` -> `LOW`
+   - adherence `50-79` -> `MEDIUM`
+   - adherence `< 50` -> `HIGH`
+2. Instruction generation is also implemented in Dart using the same medicine-specific rule set.
+3. Voice output uses `flutter_tts` directly on the device.
+
+### 4. Automatic AI Trigger Flow
+- App polls active schedules every 20 seconds.
+- When current time matches a schedule (`HH:MM`), it automatically:
+  - reads local medicine and adherence values from SQLite,
+  - calculates adherence,
+  - predicts risk locally in Dart,
+  - generates the instruction text,
+  - speaks it using Flutter TTS.
+- No button click is required.
+
+Current language is English (`en`). The TTS layer is prepared for future multilingual support such as Hindi (`hi`) and Kannada (`kn`).
+
 ---
 
 ## 📡 Communication Protocol
