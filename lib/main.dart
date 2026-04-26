@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_background/flutter_background.dart';
 import 'package:provider/provider.dart';
 import 'providers/database_provider.dart';
 import 'providers/bluetooth_provider.dart';
@@ -9,6 +10,15 @@ import 'services/medicine_automation_service.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await BackgroundDoseScheduler.instance.initialize();
+
+  final androidConfig = FlutterBackgroundAndroidConfig(
+    notificationTitle: 'MediDispense is running',
+    notificationText: 'Medicine reminders stay active in the background',
+    notificationImportance: AndroidNotificationImportance.high,
+    notificationIcon: AndroidResource(name: 'ic_launcher', defType: 'mipmap'),
+  );
+  await FlutterBackground.initialize(androidConfig: androidConfig);
+  await FlutterBackground.enableBackgroundExecution();
 
   runApp(
     MultiProvider(
@@ -65,6 +75,7 @@ class _AutomationBootstrapState extends State<_AutomationBootstrap> {
   @override
   void dispose() {
     MedicineAutomationService.instance.stop();
+    FlutterBackground.disableBackgroundExecution();
     super.dispose();
   }
 

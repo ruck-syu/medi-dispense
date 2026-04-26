@@ -81,17 +81,23 @@ Future<void> backgroundDoseAlarmCallback() async {
     final missedDoses = summary['missed'] ?? 0;
 
     final adherence = totalDoses <= 0 ? 0.0 : (takenDoses / totalDoses) * 100;
+    final riskLevel = adherence >= 80
+        ? 'LOW'
+      : missedDoses > 0 || adherence >= 50
+            ? 'MEDIUM'
+            : 'HIGH';
 
-    await aiService.generateAndSpeak(
-      medicine: medicine.name,
+    final instruction = aiService.generateInstruction(
+      medicine.name,
+      dose.scheduledTime,
+      riskLevel,
       purpose: medicine.purpose,
-      time: dose.scheduledTime,
-      totalDoses: totalDoses,
-      takenDoses: takenDoses,
-      missedDoses: missedDoses,
-      delayMinutes: dose.delayMinutes,
-      adherencePercentage: adherence,
-      language: 'en',
     );
+
+    try {
+      await aiService.speakInstruction(instruction, language: 'en');
+    } catch (_) {
+      // If TTS still fails in a background context, the alarm still succeeded.
+    }
   }
 }
