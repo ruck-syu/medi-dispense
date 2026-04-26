@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../services/local_ai_service.dart';
+import '../services/rag_ei_assistant_service.dart';
 
 class AIScreen extends StatefulWidget {
   const AIScreen({super.key});
@@ -10,104 +10,267 @@ class AIScreen extends StatefulWidget {
 }
 
 class _AIScreenState extends State<AIScreen> {
-  final LocalAiService _localAiService = LocalAiService();
+  final RagAiAssistantService _assistant = RagAiAssistantService();
 
-  bool _loadingStatus = false;
-  bool _testing = false;
+  bool _loading = true;
+  bool _working = false;
+  bool _voiceEnabled = true;
+  String _status = 'Preparing TinyLlama...';
+  String? _selectedQuestionId;
+  String? _response;
+  String? _prompt;
+  String? _riskLevel;
+  double? _adherence;
   String? _error;
-  OfflineAiResult? _testResponse;
-
-  final String _sampleMedicine = 'BP';
-  final String _sampleTime = '09:10';
-  final int _sampleTotalDoses = 10;
-  final int _sampleTakenDoses = 7;
-  final int _sampleMissedDoses = 3;
-  final int _sampleDelayMinutes = 15;
-  final double _sampleAdherence = 70;
 
   @override
   void initState() {
     super.initState();
+    _bootAssistant();
   }
 
-  Future<void> _refreshStatus() async {
+  Future<void> _bootAssistant() async {
     setState(() {
-      _loadingStatus = true;
-      _error = null;
-    });
-    await Future<void>.delayed(const Duration(milliseconds: 120));
-    if (mounted) {
-      setState(() {
-        _loadingStatus = false;
-      });
-    }
-  }
-
-  Future<void> _runTestInference() async {
-    setState(() {
-      _testing = true;
+      _loading = true;
+      _status = 'Loading local model...';
       _error = null;
     });
 
     try {
-      final response = await _localAiService.generateAndSpeak(
-        medicine: _sampleMedicine,
-        time: _sampleTime,
-        totalDoses: _sampleTotalDoses,
-        takenDoses: _sampleTakenDoses,
-        missedDoses: _sampleMissedDoses,
-        delayMinutes: _sampleDelayMinutes,
-        adherencePercentage: _sampleAdherence,
-        language: 'en',
-      );
-
+      await _assistant.initialize(onProgress: (status) {
+        if (!mounted) return;
+        setState(() {
+          _status = status;
+        });
+      });
+      if (!mounted) return;
       setState(() {
-        _testResponse = response;
+        _loading = false;
+        _status = 'Ready';
       });
     } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _status = 'Model will fall back to safe advice';
+        _error = e.toString();
+      });
+    }
+  }
+
+  Future<void> _askQuestion(RagAiQuestion question) async {
+    setState(() {
+      _working = true;
+      _selectedQuestionId = question.id;
+      _error = null;
+    });
+
+    try {
+      final answer = await _assistant.answerQuestion(
+        question: question,
+        speak: _voiceEnabled,
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _response = answer.response;
+        _prompt = answer.prompt;
+        _riskLevel = answer.riskLevel;
+        _adherence = answer.adherencePercentage;
+        _status = answer.fallbackUsed == 'model'
+            ? 'Answered with TinyLlama'
+            : 'Answered with safe fallback';
+      });
+    } catch (e) {
+      if (!mounted) return;
       setState(() {
         _error = e.toString();
+        _response = 'Please follow your medicine schedule and consult a doctor if needed.';
+        _status = 'Fallback response shown';
       });
     } finally {
       if (mounted) {
         setState(() {
-          _testing = false;
+          _working = false;
         });
       }
     }
+  }
+
+  Color _statusColor() {
+    if (_status.toLowerCase().contains('ready') ||
+        _status.toLowerCase().contains('answered')) {
+      return Colors.green;
+    }
+    if (_error != null) {
+      return Colors.red;
+    }
+    return Colors.orange;
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Offline AI Assistant'),
+        title: const Text('RAG-AI Assistant'),
         actions: [
           IconButton(
-            onPressed: _loadingStatus ? null : _refreshStatus,
+            onPressed: _loading ? null : _bootAssistant,
             icon: const Icon(Icons.refresh),
+            tooltip: 'Reload model',
           ),
         ],
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          const Text(
-            'AI now runs fully offline inside Flutter.',
-            style: TextStyle(fontSize: 13, color: Colors.black54),
+          Card(
+            color: Colors.teal.shade50,
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.memory, color: Colors.teal.shade700),
+                      const SizedBox(width: 8),
+                      const Expanded(
+                        child: Text(
+                          'TinyLlama 1.1B Chat runs fully on device.',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    _status,
+                    style: TextStyle(color: _statusColor()),
+                  ),
+                  if (_loading) ...[
+                    const SizedBox(height: 12),
+                    const LinearProgressIndicator(),
+                  ],
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Ask one of the fixed health questions below. The assistant uses your local profile and medicine history to build the prompt.',
+                    style: TextStyle(fontSize: 12, color: Colors.black54),
+                  ),
+                ],
+              ),
+            ),
           ),
-          const SizedBox(height: 12),
-          if (_loadingStatus) const LinearProgressIndicator() else _buildStatusSection(),
           const SizedBox(height: 16),
-          ElevatedButton.icon(
-            onPressed: _testing ? null : _runTestInference,
-            icon: const Icon(Icons.science_outlined),
-            label: Text(_testing ? 'Testing Offline AI...' : 'Run Offline AI Demo'),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            value: _voiceEnabled,
+            onChanged: (value) {
+              setState(() {
+                _voiceEnabled = value;
+              });
+            },
+            title: const Text('Speak answer automatically'),
+            subtitle: const Text('Uses on-device TTS after the model responds'),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Choose a question',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 12),
-          if (_testResponse != null) _buildTestResult(_testResponse!),
+          ...RagAiAssistantService.questions.map((question) {
+            final selected = _selectedQuestionId == question.id;
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: ElevatedButton(
+                onPressed: (_working || _loading) ? null : () => _askQuestion(question),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: selected ? Colors.teal : Colors.white,
+                  foregroundColor: selected ? Colors.white : Colors.teal,
+                  padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+                  side: BorderSide(color: Colors.teal.shade300),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  elevation: 0,
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.question_answer_outlined),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        question.question,
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }),
+          const SizedBox(height: 16),
+          if (_working) const LinearProgressIndicator(),
+          if (_response != null) ...[
+            const SizedBox(height: 16),
+            Card(
+              color: Colors.blue.shade50,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.auto_awesome, color: Colors.blue),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Response',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.blue.shade900,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      _response!,
+                      style: const TextStyle(fontSize: 15, height: 1.4),
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        if (_riskLevel != null)
+                          Chip(label: Text('Risk: $_riskLevel')),
+                        if (_adherence != null)
+                          Chip(label: Text('Adherence: ${_adherence!.toStringAsFixed(0)}%')),
+                      ],
+                    ),
+                    if (_prompt != null) ...[
+                      const SizedBox(height: 12),
+                      ExpansionTile(
+                        tilePadding: EdgeInsets.zero,
+                        title: const Text('Prompt used'),
+                        children: [
+                          SelectableText(
+                            _prompt!,
+                            style: const TextStyle(fontSize: 12, color: Colors.black54),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ],
           if (_error != null) ...[
-            const SizedBox(height: 12),
+            const SizedBox(height: 16),
             Card(
               color: Colors.red.shade50,
               child: Padding(
@@ -119,89 +282,12 @@ class _AIScreenState extends State<AIScreen> {
               ),
             ),
           ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStatusSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _statusCard(
-          title: 'Model 1: Risk Prediction',
-          subtitle: 'Rule-based approximation from adherence percentage',
-          ready: true,
-        ),
-        const SizedBox(height: 8),
-        _statusCard(
-          title: 'Model 2: Voice Assistant',
-          subtitle: 'Rule-based instruction generator + Flutter TTS',
-          ready: true,
-        ),
-        const SizedBox(height: 8),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Offline logic used',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 8),
-                const Text('Risk thresholds: >=80 LOW, 50-79 MEDIUM, <50 HIGH'),
-                const SizedBox(height: 4),
-                const Text('Instruction templates: medicine-specific messages with risk-based advice'),
-                const SizedBox(height: 4),
-                const Text('Speech engine: Flutter TTS, no backend/API calls'),
-              ],
-            ),
+          const SizedBox(height: 16),
+          const Text(
+            'Model note: TinyLlama downloads once, then runs offline on device from cache.',
+            style: TextStyle(fontSize: 12, color: Colors.black54),
           ),
-        ),
-      ],
-    );
-  }
-
-  Widget _statusCard({
-    required String title,
-    required String subtitle,
-    required bool ready,
-  }) {
-    return Card(
-      child: ListTile(
-        leading: Icon(
-          ready ? Icons.check_circle : Icons.error,
-          color: ready ? Colors.green : Colors.red,
-        ),
-        title: Text(title),
-        subtitle: Text(subtitle),
-      ),
-    );
-  }
-
-  Widget _buildTestResult(OfflineAiResult response) {
-    return Card(
-      color: Colors.blue.shade50,
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Risk Prediction: ${response.risk.level}',
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            Text(response.instructionText),
-            const SizedBox(height: 8),
-            Text(
-              'Sample input: adherence $_sampleAdherence%, doses $_sampleTakenDoses/$_sampleTotalDoses, missed $_sampleMissedDoses, delay $_sampleDelayMinutes min',
-              style: const TextStyle(fontSize: 12, color: Colors.black54),
-            ),
-          ],
-        ),
+        ],
       ),
     );
   }

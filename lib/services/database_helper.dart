@@ -434,7 +434,8 @@ class DatabaseHelper {
         COUNT(*) as total,
         SUM(CASE WHEN status = 'taken' THEN 1 ELSE 0 END) as taken,
         SUM(CASE WHEN status = 'missed' THEN 1 ELSE 0 END) as missed,
-        SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending
+        SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
+        SUM(delay_minutes) as delay
       FROM dose_records
       WHERE medicine_id = ?
       ''',
@@ -451,6 +452,7 @@ class DatabaseHelper {
       'taken': (row['taken'] as int?) ?? 0,
       'missed': (row['missed'] as int?) ?? 0,
       'pending': (row['pending'] as int?) ?? 0,
+      'delay': (row['delay'] as int?) ?? 0,
     };
   }
 }

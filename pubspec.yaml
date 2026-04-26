@@ -41,6 +41,7 @@ dependencies:
   intl: ^0.20.2
   flutter_tts: ^4.2.5
   android_alarm_manager_plus: ^4.0.8
+  onenm_local_llm: ^0.1.5
 
 dev_dependencies:
   flutter_test:
