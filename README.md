@@ -1,98 +1,135 @@
-# MediDispense - IoT-Based Medicine Dispenser
+# MediDispense - Smart Medicine Adherence System
 
-**MediDispense** is a complete hardware and software solution that automates medicine dispensing using an **Arduino Uno R4** and a companion **Flutter** mobile application. 
+MediDispense is an IoT + mobile solution for medicine reminders, schedule tracking, and adherence insights.
+It combines an Arduino dispenser (BLE + RTC + servo) with a Flutter app that supports dose-level tracking, offline voice guidance, and an on-device LLM assistant.
 
-This project aims to assist elderly users or anyone who needs strict adherence to medication schedules by automating the physical dispensing process based on customized app schedules.
+## What Is Implemented
 
----
+### 1. Flutter App Core
+- Bluetooth BLE connect/disconnect with the dispenser.
+- Time sync from phone to Arduino RTC.
+- Add medicine with structured fields:
+  - Medicine name
+  - Dosage
+  - Tablets per dose
+  - Times per day
+  - Number of days
+  - Purpose/indication
+  - Start date
+  - Scheduled times
+- Schedule view for today and other dates.
+- Dose actions for today only: Taken and Missed.
+- Future date views are read-only.
 
-## 🌟 Key Features
+### 2. Data Model and Database (SQLite)
+- Medicines table expanded with:
+  - tablets_per_dose
+  - times_per_day
+  - total_days
+  - purpose
+  - start_date
+- Dose records table added for per-dose tracking:
+  - scheduled_date
+  - scheduled_time
+  - status (pending/taken/missed)
+  - delay_minutes
+  - taken_time
+  - is_manual
+- Adherence metrics table present and used.
+- Migration supports older DB versions.
 
-### Mobile Application (Flutter)
-- **Bluetooth BLE Integration:** Effortlessly scan and connect to the medicine dispenser using Bluetooth Low Energy.
-- **Smart Time Synchronization:** Automatically synchronizes the Arduino's Real-Time Clock (RTC) with the smartphone's time immediately upon connection.
-- **Schedule Management:** Add, edit, and track medication schedules. Select the specific medicine, dispensing time, and the physical compartment it resides in.
-- **Smart Validation:** Automatically disables occupied compartments in the UI, ensuring two medicines aren't accidentally scheduled for the same slot at the same time.
-- **Remote Hardware Control:** Send manual commands to reset the dispenser's servo motor to its default state directly from the app.
-- **Patient Profile:** Manage basic patient details and store an organized list of predefined medicines (including dosage and cause).
+### 3. Dose Generation and Tracking
+- For each medicine, schedules are saved first.
+- Dose records are generated for the full duration (days x times/day).
+- Home screen shows doses for selected date.
+- Delay minutes are captured when a dose is marked taken late.
+- Summary stats are available per medicine:
+  - total
+  - taken
+  - missed
+  - pending
+  - delay
 
-### Hardware (Arduino)
-- **Automated Dispensing:** Uses a Servo motor to rotate a 4-compartment dispenser at precise intervals.
-- **Real-Time Tracking:** Relies on the Arduino's built-in RTC for 100% accurate dispensing, independent of a constant Bluetooth connection.
-- **Visual & Audio Cues:** Triggers an LED and buzzer when a medication is dispensed to alert the user.
+### 4. Automation and Voice Guidance
+- Foreground automation service checks due doses periodically.
+- Auto-mark missed after grace period for pending overdue doses.
+- Voice guidance is generated and spoken via flutter_tts.
+- Background alarm scheduling is integrated with android_alarm_manager_plus for due-dose triggers.
 
----
+### 5. Dynamic Rule-Based Assistant (Model 2)
+- Keyword-based medicine category detection (not strict string equality).
+- Category examples include BP, Diabetes, Fever, Cough, Headache, Cholesterol, Asthma, Heart, Thyroid, Pain.
+- Uses medicine name + purpose for matching.
+- Adds risk-level and time-of-day personalization to messages.
+- Safe fallback response when output is unclear.
 
-## 🛠 Tech Stack
+### 6. On-Device LLM Assistant (RAG-AI Assistant)
+- Assistant name: RAG-AI Assistant.
+- Uses TinyLlama 1.1B Chat via on-device inference (llama.cpp plugin path).
+- Fixed health questions in UI.
+- Builds structured prompt from local DB context:
+  - User profile
+  - Medicine list
+  - Taken/missed/pending
+  - Delay minutes
+  - Adherence percentage
+  - Risk level
+- Generates longer responses (not limited to 2-3 sentences).
+- Optional TTS playback for generated response.
+- Safe fallback text is shown if model output is not usable.
 
-- **Mobile Application:** 
-  - Framework: [Flutter](https://flutter.dev/) (Dart)
-  - State Management: `provider`
-  - Local Database: `sqflite` (SQLite)
-  - Bluetooth: `flutter_blue_plus`
-- **Hardware:** 
-  - Board: Arduino Uno R4 WiFi (leveraging built-in BLE & RTC)
-  - Language: C++
-  - Libraries: `ArduinoBLE.h`, `RTC.h`, `Servo.h`
+## Tech Stack
 
----
+### Flutter
+- provider
+- sqflite
+- path
+- intl
+- flutter_blue_plus
+- flutter_tts
+- android_alarm_manager_plus
+- onenm_local_llm
 
-## 🔌 Hardware Requirements
+### Arduino
+- ArduinoBLE
+- RTC
+- Servo
 
-To build the physical dispenser, you will need:
-1. **Arduino Uno R4 WiFi** (Requires built-in BLE and RTC)
-2. **Servo Motor (180 degrees)**
-3. **LED & 220-ohm Resistor** (For visual alerts)
-4. **Buzzer** (For audio alerts)
-5. **Push Button** (Optional manual trigger/reset)
-6. A **3D-Printed or custom-built** 4-compartment medicine tray mounted to the servo.
+### Optional Python Backend (Legacy/Experimental)
+- FastAPI service remains in backend/ as an optional component.
+- Current mobile AI path is offline and in-app.
 
----
+## Project Structure
+- lib/:
+  - screens/: UI (Home, Add Medicine, AI, Profile)
+  - services/: DB, automation, TTS, background scheduler, RAG-AI assistant
+  - providers/: app state
+  - models/: entities
+- arduino_ble_code.ino: Arduino BLE + dispensing logic
+- backend/: optional legacy AI API
 
-## 🚀 Setup & Installation
+## Setup
 
-### 1. Arduino Setup
-1. Open `arduino_ble_code.ino` using the [Arduino IDE](https://www.arduino.cc/en/software).
-2. Connect your Arduino Uno R4 WiFi via USB.
-3. Ensure the following libraries are installed in the IDE:
-   - `ArduinoBLE`
-   - `RTC`
-   - `Servo`
-4. Compile and upload the sketch to the Arduino.
-5. The Arduino will automatically begin broadcasting a BLE signal with the name **"MediDispense"**.
+### Flutter App
+1. Install Flutter SDK.
+2. Run:
+   - flutter pub get
+3. Run on a physical Android device:
+   - flutter run
 
-### 2. Flutter App Setup
-1. Ensure you have the [Flutter SDK](https://docs.flutter.dev/get-started/install) installed.
-2. Clone or open this repository.
-3. Fetch the required dependencies:
-   ```bash
-   flutter pub get
-   ```
-4. Run the app on a physical device (Bluetooth does not work on most emulators/simulators):
-   ```bash
-   flutter run
-   ```
-> **Note for iOS:** Ensure you have configured your Apple Developer account to sign the app, and that you have granted Bluetooth permissions when prompted.
+### Arduino
+1. Open arduino_ble_code.ino in Arduino IDE.
+2. Install libraries: ArduinoBLE, RTC, Servo.
+3. Upload to Arduino Uno R4 WiFi.
 
----
+### Optional Backend
+1. Create and activate Python virtual environment.
+2. Install dependencies from backend/requirements.txt.
+3. Start API:
+   - uvicorn app:app --host 0.0.0.0 --port 8000
 
-## 📡 Communication Protocol
-
-The app and the Arduino communicate over Bluetooth Low Energy (BLE) using a custom Service UUID:
-- **Service UUID:** `19b10000-e8f2-537e-4f6c-d104768a1214`
-
-It utilizes two characteristics:
-1. **Time Sync Characteristic (`19b10002...`)**
-   - Expects a 14-character string: `YYYYMMDDHHMMSS`
-   - Sets the Arduino RTC.
-2. **Command Characteristic (`19b10001...`)**
-   - `"RESET"`: Returns the servo to 0 degrees.
-   - `"ADD:HH:MM:C"`: Adds a schedule at `HH:MM` for compartment `C`.
-   - `"DEL:HH:MM:C"`: Removes a schedule at `HH:MM` for compartment `C`.
-
----
-
-## 🛑 Constraints & Limitations
-- **Compartments:** The current servo implementation is calibrated for a 180-degree motor and a 4-compartment tray ($45^{\circ}$ rotation per compartment).
-- **Active Schedules:** The app restricts scheduling to a maximum of 4 active compartments simultaneously to match the physical hardware constraints.
-- **Connection:** Time syncing only occurs when the app is actively opened and connected to the device. However, dispensing will continue to function accurately without a connection as long as the Arduino remains powered.
+## Notes
+- BLE operations should be tested on a real phone.
+- On-device TinyLlama requires Android arm64 physical device support.
+- First model initialization may require download; later runs are local from cache.
+- This app provides general guidance only and not medical prescriptions.

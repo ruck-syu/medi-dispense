@@ -13,10 +13,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final _nameController = TextEditingController();
   final _ageController = TextEditingController();
 
-  final _medNameController = TextEditingController();
-  final _medDosageController = TextEditingController();
-  final _medCauseController = TextEditingController();
-
   @override
   void initState() {
     super.initState();
@@ -33,9 +29,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void dispose() {
     _nameController.dispose();
     _ageController.dispose();
-    _medNameController.dispose();
-    _medDosageController.dispose();
-    _medCauseController.dispose();
     super.dispose();
   }
 
@@ -54,66 +47,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
     ).showSnackBar(const SnackBar(content: Text('Profile saved successfully')));
   }
 
-  void _showAddMedicineDialog() {
-    _medNameController.clear();
-    _medDosageController.clear();
-    _medCauseController.clear();
-
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Add Medicine'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: _medNameController,
-              decoration: const InputDecoration(labelText: 'Medicine Name'),
-            ),
-            TextField(
-              controller: _medDosageController,
-              decoration: const InputDecoration(labelText: 'Dosage'),
-            ),
-            TextField(
-              controller: _medCauseController,
-              decoration: const InputDecoration(labelText: 'Cause/Purpose'),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              if (_medNameController.text.isNotEmpty &&
-                  _medDosageController.text.isNotEmpty &&
-                  _medCauseController.text.isNotEmpty) {
-                Provider.of<DatabaseProvider>(
-                  context,
-                  listen: false,
-                ).addMedicine(
-                  _medNameController.text,
-                  _medDosageController.text,
-                  _medCauseController.text,
-                );
-                Navigator.pop(ctx);
-              }
-            },
-            child: const Text('Add'),
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final db = Provider.of<DatabaseProvider>(context);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Profile & Medicines')),
+      appBar: AppBar(title: const Text('Profile')),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -149,16 +88,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
             ),
             const SizedBox(height: 32),
-            Row(
+            const Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text(
+                Text(
                   'Medicines List',
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.add_circle, color: Colors.teal),
-                  onPressed: _showAddMedicineDialog,
                 ),
               ],
             ),
