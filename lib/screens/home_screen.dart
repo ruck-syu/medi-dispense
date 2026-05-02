@@ -92,15 +92,24 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _markDoseAsTaken(DoseRecord dose) async {
-    final now = DateTime.now();
-    final doseParts = dose.scheduledTime.split(':');
-    final doseHour = int.parse(doseParts[0]);
-    final doseMinute = int.parse(doseParts[1]);
+    if (!_canMarkDoseAsTaken(dose)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Taken is available only after the scheduled time'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
 
-    final scheduledDateTime =
-        DateTime(now.year, now.month, now.day, doseHour, doseMinute);
-    final delayMinutes =
-        now.difference(scheduledDateTime).inMinutes.clamp(0, 100000).toInt();
+    final now = DateTime.now();
+    final scheduledDateTime = _scheduledDateTime(dose)!;
+    final delayMinutes = now
+        .difference(scheduledDateTime)
+        .inMinutes
+        .clamp(0, 100000)
+        .toInt();
     final takenTime =
         '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
 
@@ -117,8 +126,9 @@ class _HomeScreenState extends State<HomeScreen> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content:
-            Text('Marked as taken${delayMinutes > 0 ? ' ($delayMinutes min late)' : ''}'),
+        content: Text(
+          'Marked as taken${delayMinutes > 0 ? ' ($delayMinutes min late)' : ''}',
+        ),
         backgroundColor: Colors.green,
       ),
     );
@@ -164,6 +174,36 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  DateTime? _scheduledDateTime(DoseRecord dose) {
+    final dateParts = dose.scheduledDate.split('-');
+    final timeParts = dose.scheduledTime.split(':');
+    if (dateParts.length != 3 || timeParts.length != 2) {
+      return null;
+    }
+
+    final year = int.tryParse(dateParts[0]);
+    final month = int.tryParse(dateParts[1]);
+    final day = int.tryParse(dateParts[2]);
+    final hour = int.tryParse(timeParts[0]);
+    final minute = int.tryParse(timeParts[1]);
+
+    if (year == null ||
+        month == null ||
+        day == null ||
+        hour == null ||
+        minute == null) {
+      return null;
+    }
+
+    return DateTime(year, month, day, hour, minute);
+  }
+
+  bool _canMarkDoseAsTaken(DoseRecord dose) {
+    final scheduled = _scheduledDateTime(dose);
+    if (scheduled == null) return false;
+    return !DateTime.now().isBefore(scheduled);
+  }
+
   @override
   Widget build(BuildContext context) {
     final btProvider = context.watch<BluetoothProvider>();
@@ -184,10 +224,16 @@ class _HomeScreenState extends State<HomeScreen> {
               icon: const Icon(Icons.restart_alt),
               tooltip: 'Reset Servo',
               onPressed: () async {
-                await btProvider.resetServo();
+                final sent = await btProvider.resetServo();
                 if (!context.mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Servo reset command sent')),
+                  SnackBar(
+                    content: Text(
+                      sent
+                          ? 'Servo reset command sent'
+                          : 'Unable to send reset. Reconnect BLE and try again.',
+                    ),
+                  ),
                 );
               },
             ),
@@ -205,7 +251,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 );
               },
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 12,
+                ),
                 decoration: BoxDecoration(
                   color: btProvider.isConnected
                       ? Colors.green.shade100
@@ -249,7 +298,8 @@ class _HomeScreenState extends State<HomeScreen> {
                         } else {
                           showDialog(
                             context: context,
-                            builder: (context) => const BluetoothDevicesDialog(),
+                            builder: (context) =>
+                                const BluetoothDevicesDialog(),
                           );
                         }
                       },
@@ -268,7 +318,10 @@ class _HomeScreenState extends State<HomeScreen> {
               children: [
                 Text(
                   _isTodaySelected ? 'Today\'s Doses' : 'Schedule',
-                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
                 Row(
                   children: [
@@ -328,8 +381,11 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const Icon(Icons.check_circle_outline,
-                            size: 48, color: Colors.grey),
+                        const Icon(
+                          Icons.check_circle_outline,
+                          size: 48,
+                          color: Colors.grey,
+                        ),
                         const SizedBox(height: 16),
                         Text(
                           'No doses scheduled for ${DateFormat('MMM dd').format(_selectedDate)}',
@@ -345,7 +401,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   itemCount: doses.length,
                   itemBuilder: (context, index) {
                     final dose = doses[index];
-                    final medicine = dbProvider.getMedicineById(dose.medicineId);
+                    final medicine = dbProvider.getMedicineById(
+                      dose.medicineId,
+                    );
 
                     return Card(
                       shape: RoundedRectangleBorder(
@@ -362,7 +420,8 @@ class _HomeScreenState extends State<HomeScreen> {
                               children: [
                                 Expanded(
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       Text(
                                         medicine?.name ?? 'Unknown Medicine',
@@ -388,7 +447,9 @@ class _HomeScreenState extends State<HomeScreen> {
                                     vertical: 6,
                                   ),
                                   decoration: BoxDecoration(
-                                    color: _getStatusColor(dose.status).withAlpha(30),
+                                    color: _getStatusColor(
+                                      dose.status,
+                                    ).withAlpha(30),
                                     borderRadius: BorderRadius.circular(12),
                                   ),
                                   child: Text(
@@ -419,7 +480,9 @@ class _HomeScreenState extends State<HomeScreen> {
                                     ),
                                     if (dose.takenTime != null)
                                       Padding(
-                                        padding: const EdgeInsets.only(left: 12),
+                                        padding: const EdgeInsets.only(
+                                          left: 12,
+                                        ),
                                         child: Text(
                                           'Taken: ${_formatTime(dose.takenTime!)}',
                                           style: TextStyle(
@@ -445,7 +508,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
                             if (dose.status == 'pending' && _isTodaySelected)
                               Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceEvenly,
                                 children: [
                                   Expanded(
                                     child: OutlinedButton.icon(
@@ -454,14 +518,18 @@ class _HomeScreenState extends State<HomeScreen> {
                                       label: const Text('Missed'),
                                       style: OutlinedButton.styleFrom(
                                         foregroundColor: Colors.red,
-                                        side: const BorderSide(color: Colors.red),
+                                        side: const BorderSide(
+                                          color: Colors.red,
+                                        ),
                                       ),
                                     ),
                                   ),
                                   const SizedBox(width: 8),
                                   Expanded(
                                     child: ElevatedButton.icon(
-                                      onPressed: () => _markDoseAsTaken(dose),
+                                      onPressed: _canMarkDoseAsTaken(dose)
+                                          ? () => _markDoseAsTaken(dose)
+                                          : null,
                                       icon: const Icon(Icons.check, size: 16),
                                       label: const Text('Taken'),
                                       style: ElevatedButton.styleFrom(
@@ -491,7 +559,10 @@ class _HomeScreenState extends State<HomeScreen> {
             MaterialPageRoute(builder: (context) => const AddMedicineScreen()),
           );
           if (created == true && context.mounted) {
-            await Provider.of<DatabaseProvider>(context, listen: false).loadData();
+            await Provider.of<DatabaseProvider>(
+              context,
+              listen: false,
+            ).loadData();
             _refreshDoses();
           }
         },

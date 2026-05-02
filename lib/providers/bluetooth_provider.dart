@@ -52,6 +52,7 @@ class BluetoothProvider extends ChangeNotifier {
   Future<void> connect(BluetoothDevice device) async {
     await stopScan();
     try {
+      await _connectionStateSubscription?.cancel();
       await device.connect(license: License.free, autoConnect: false);
       _connectedDevice = device;
 
@@ -105,8 +106,13 @@ class BluetoothProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> syncTime() async {
-    if (_timeSyncChar == null) return;
+  Future<bool> syncTime() async {
+    if (_connectedDevice == null) return false;
+    if (_timeSyncChar == null) {
+      await _discoverServices();
+    }
+    if (_timeSyncChar == null) return false;
+
     final now = DateTime.now();
     // Format: YYYYMMDDHHMMSS
     String year = now.year.toString().padLeft(4, '0');
@@ -118,25 +124,32 @@ class BluetoothProvider extends ChangeNotifier {
 
     String timeStr = '$year$month$day$hour$minute$second';
     await _timeSyncChar!.write(timeStr.codeUnits);
+    return true;
   }
 
-  Future<void> sendCommand(String cmd) async {
-    if (_commandChar == null) return;
+  Future<bool> sendCommand(String cmd) async {
+    if (_connectedDevice == null) return false;
+    if (_commandChar == null) {
+      await _discoverServices();
+    }
+    if (_commandChar == null) return false;
+
     await _commandChar!.write(cmd.codeUnits);
+    return true;
   }
 
-  Future<void> resetServo() async {
-    await sendCommand("RESET");
+  Future<bool> resetServo() async {
+    return sendCommand("RESET");
   }
 
-  Future<void> addScheduleToDevice(String time, int compartment) async {
+  Future<bool> addScheduleToDevice(String time, int compartment) async {
     // time format HH:MM -> "ADD:HH:MM:C"
-    await sendCommand("ADD:$time:$compartment");
+    return sendCommand("ADD:$time:$compartment");
   }
 
-  Future<void> deleteScheduleFromDevice(String time, int compartment) async {
+  Future<bool> deleteScheduleFromDevice(String time, int compartment) async {
     // time format HH:MM -> "DEL:HH:MM:C"
-    await sendCommand("DEL:$time:$compartment");
+    return sendCommand("DEL:$time:$compartment");
   }
 
   @override
