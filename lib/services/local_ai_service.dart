@@ -1,4 +1,5 @@
 import 'package:flutter_tts/flutter_tts.dart';
+import 'risk_inference_service.dart';
 
 class LocalRiskResult {
   final String level;
@@ -15,9 +16,12 @@ class OfflineAiResult {
 }
 
 class LocalAiService {
-  LocalAiService({FlutterTts? flutterTts}) : _flutterTts = flutterTts ?? FlutterTts();
+  LocalAiService({FlutterTts? flutterTts})
+    : _flutterTts = flutterTts ?? FlutterTts();
 
   final FlutterTts _flutterTts;
+  final RiskInferenceService _riskInferenceService =
+      RiskInferenceService.instance;
 
   static const Map<String, LocalRiskResult> riskOptions = {
     'LOW': LocalRiskResult(level: 'LOW', label: 'Low risk'),
@@ -39,25 +43,29 @@ class LocalAiService {
   };
 
   LocalRiskResult predictRisk({
+    required String medicine,
+    String? purpose,
     required int totalDoses,
     required int takenDoses,
     required int missedDoses,
     required int delayMinutes,
     required double adherencePercentage,
   }) {
-    final normalized = adherencePercentage.isFinite ? adherencePercentage : 0.0;
-
-    if (normalized >= 80) {
-      return riskOptions['LOW']!;
-    }
-    if (normalized >= 50) {
-      return riskOptions['MEDIUM']!;
-    }
-    return riskOptions['HIGH']!;
+    final result = _riskInferenceService.predictRisk(
+      medicine: medicine,
+      purpose: purpose,
+      totalDoses: totalDoses,
+      takenDoses: takenDoses,
+      missedDoses: missedDoses,
+      delayMinutes: delayMinutes,
+      adherencePercentage: adherencePercentage,
+    );
+    return riskOptions[result.level] ?? riskOptions['MEDIUM']!;
   }
 
   String? _detectCategory(String medicine, {String? purpose}) {
-    final combined = '${medicine.toLowerCase()} ${(purpose ?? '').toLowerCase()}';
+    final combined =
+        '${medicine.toLowerCase()} ${(purpose ?? '').toLowerCase()}';
 
     for (final entry in medicineKeywords.entries) {
       for (final keyword in entry.value) {
@@ -101,7 +109,7 @@ class LocalAiService {
     switch (category) {
       case 'BP':
         message =
-          '${base}Please take your blood pressure tablet now. '
+            '${base}Please take your blood pressure tablet now. '
             'Drink one to two glasses of water. '
             'Avoid salty and oily foods. '
             'Take rest for at least 15 to 20 minutes. '
@@ -109,7 +117,7 @@ class LocalAiService {
         break;
       case 'Diabetes':
         message =
-          '${base}Please take your diabetes medicine now. '
+            '${base}Please take your diabetes medicine now. '
             'Eat your meal on time after taking medicine. '
             'Avoid sugary foods and drinks. '
             'Drink enough water. '
@@ -117,55 +125,55 @@ class LocalAiService {
         break;
       case 'Fever':
         message =
-          '${base}Please take your fever tablet now. '
+            '${base}Please take your fever tablet now. '
             'Drink plenty of fluids like water or juice. '
             'Take proper rest. '
             'Avoid cold foods and stay warm. ';
         break;
       case 'Cough':
         message =
-          '${base}Please take your cough medicine now. '
+            '${base}Please take your cough medicine now. '
             'Drink warm water. '
             'Avoid cold drinks and dust exposure. '
             'Take proper rest. ';
         break;
       case 'Headache':
         message =
-          '${base}Please take your headache tablet now. '
+            '${base}Please take your headache tablet now. '
             'Take rest in a quiet place. '
             'Avoid bright light and loud noise. '
             'Drink enough water. ';
         break;
       case 'Cholesterol':
         message =
-          '${base}Please take your cholesterol medicine now. '
+            '${base}Please take your cholesterol medicine now. '
             'Avoid oily and fatty foods. '
             'Include healthy vegetables in your diet. '
             'Do light physical activity regularly. ';
         break;
       case 'Asthma':
         message =
-          '${base}Please take your asthma medication now. '
+            '${base}Please take your asthma medication now. '
             'Avoid dust and allergens. '
             'Keep your inhaler nearby. '
             'Take rest if breathing is difficult. ';
         break;
       case 'Heart':
         message =
-          '${base}Please take your heart medication now. '
+            '${base}Please take your heart medication now. '
             'Avoid stress and heavy activity. '
             'Maintain a healthy diet. '
             'Take proper rest. ';
         break;
       case 'Thyroid':
         message =
-          '${base}Please take your thyroid medicine now on an empty stomach. '
+            '${base}Please take your thyroid medicine now on an empty stomach. '
             'Wait at least 30 minutes before eating. '
             'Maintain a proper routine. ';
         break;
       case 'Pain':
         message =
-          '${base}Please take your pain relief medicine now. '
+            '${base}Please take your pain relief medicine now. '
             'Take rest and avoid heavy physical activity. '
             'Drink enough water. ';
         break;
@@ -174,9 +182,11 @@ class LocalAiService {
     }
 
     if (riskLevel == 'HIGH') {
-      message += 'You have a high risk level. Please do not skip medicines and consult a doctor if needed. ';
+      message +=
+          'You have a high risk level. Please do not skip medicines and consult a doctor if needed. ';
     } else if (riskLevel == 'MEDIUM') {
-      message += 'Try to follow your schedule properly and avoid missing doses. ';
+      message +=
+          'Try to follow your schedule properly and avoid missing doses. ';
     } else {
       message += 'Good job maintaining your schedule. Keep it up. ';
     }
@@ -207,6 +217,8 @@ class LocalAiService {
     String language = 'en',
   }) async {
     final risk = predictRisk(
+      medicine: medicine,
+      purpose: purpose,
       totalDoses: totalDoses,
       takenDoses: takenDoses,
       missedDoses: missedDoses,

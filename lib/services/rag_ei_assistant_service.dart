@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:onenm_local_llm/onenm_local_llm.dart';
 
 import 'database_helper.dart';
+import 'risk_inference_service.dart';
 
 class RagAiQuestion {
   final String id;
@@ -36,7 +37,7 @@ class RagAiAssistantResponse {
 
 class RagAiAssistantService {
   RagAiAssistantService({FlutterTts? flutterTts})
-      : _flutterTts = flutterTts ?? FlutterTts();
+    : _flutterTts = flutterTts ?? FlutterTts();
 
   static const List<RagAiQuestion> questions = [
     RagAiQuestion(
@@ -77,6 +78,8 @@ class RagAiAssistantService {
   ];
 
   final FlutterTts _flutterTts;
+  final RiskInferenceService _riskInferenceService =
+      RiskInferenceService.instance;
   OneNm? _model;
   bool _initializing = false;
   bool _initialized = false;
@@ -125,9 +128,15 @@ class RagAiAssistantService {
     bool speak = true,
   }) async {
     final contextData = await _buildContext();
-    final prompt = _buildPrompt(contextData: contextData, question: question.question);
+    final prompt = _buildPrompt(
+      contextData: contextData,
+      question: question.question,
+    );
 
-    String fallbackText = _buildFallbackText(contextData.riskLevel, question.question);
+    String fallbackText = _buildFallbackText(
+      contextData.riskLevel,
+      question.question,
+    );
     String response = fallbackText;
 
     try {
@@ -154,13 +163,15 @@ class RagAiAssistantService {
             '$prompt\n\nYour previous answer was too short. Expand the response to around 15-20 sentences with all required sections.';
         final regenerated = await model.generate(expandedPrompt);
         final regeneratedSanitized = _sanitizeResponse(regenerated);
-        if (!_isUnclear(regeneratedSanitized) && !_isTooShort(regeneratedSanitized)) {
+        if (!_isUnclear(regeneratedSanitized) &&
+            !_isTooShort(regeneratedSanitized)) {
           response = regeneratedSanitized;
         }
       }
 
       if (_isTooShort(response)) {
-        response = '$response Please follow your medicine schedule and maintain a healthy lifestyle.';
+        response =
+            '$response Please follow your medicine schedule and maintain a healthy lifestyle.';
       }
     } catch (_) {
       response = fallbackText;
@@ -192,7 +203,9 @@ class RagAiAssistantService {
     final profile = await DatabaseHelper.instance.getProfile();
     final medicines = await DatabaseHelper.instance.getMedicines();
     final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
-    final todayDoses = await DatabaseHelper.instance.getDoseRecordsForDate(today);
+    final todayDoses = await DatabaseHelper.instance.getDoseRecordsForDate(
+      today,
+    );
 
     int totalDoses = 0;
     int takenDoses = 0;
@@ -202,7 +215,9 @@ class RagAiAssistantService {
     final medicineLines = <String>[];
 
     for (final medicine in medicines) {
-      final summary = await DatabaseHelper.instance.getDoseSummary(medicine.id!);
+      final summary = await DatabaseHelper.instance.getDoseSummary(
+        medicine.id!,
+      );
       final medicineTotal = summary['total'] ?? medicine.totalDoses;
       final medicineTaken = summary['taken'] ?? 0;
       final medicineMissed = summary['missed'] ?? 0;
@@ -229,8 +244,21 @@ class RagAiAssistantService {
     final adherencePercentage = totalDoses <= 0
         ? 0.0
         : (takenDoses / math.max(totalDoses, 1)) * 100;
-    final riskLevel = _riskLevel(adherencePercentage);
-    final todayPending = todayDoses.where((dose) => dose.status == 'pending').length;
+    final defaultMedicine = medicines.isNotEmpty ? medicines.first : null;
+    final riskLevel = _riskInferenceService
+        .predictRisk(
+          medicine: defaultMedicine?.name ?? '',
+          purpose: defaultMedicine?.purpose,
+          totalDoses: totalDoses,
+          takenDoses: takenDoses,
+          missedDoses: missedDoses,
+          delayMinutes: delayMinutes,
+          adherencePercentage: adherencePercentage,
+        )
+        .level;
+    final todayPending = todayDoses
+        .where((dose) => dose.status == 'pending')
+        .length;
 
     return _AssistantContextData(
       name: profile?.name ?? 'User',
@@ -278,7 +306,9 @@ class RagAiAssistantService {
       ..writeln('Missed doses: ${contextData.missedDoses}')
       ..writeln('Pending doses: ${contextData.pendingDoses}')
       ..writeln('Delay minutes: ${contextData.delayMinutes}')
-      ..writeln('Adherence: ${contextData.adherencePercentage.toStringAsFixed(0)}%')
+      ..writeln(
+        'Adherence: ${contextData.adherencePercentage.toStringAsFixed(0)}%',
+      )
       ..writeln('Risk level: ${contextData.riskLevel}')
       ..writeln('Today pending doses: ${contextData.todayPending}')
       ..writeln('Question intent focus: $focusHint')
@@ -366,12 +396,6 @@ class RagAiAssistantService {
       return 'Please follow a balanced food routine with regular meal timings and enough water through the day. Prefer home-cooked meals, vegetables, and protein-rich foods while reducing highly oily and sugary items. Avoid skipping meals when taking regular medicines. If your condition has specific diet restrictions, follow your doctor\'s advice closely.';
     }
     return 'Please follow your medicine schedule consistently and set fixed reminders for every dose. Keep a daily log of taken, missed, and delayed medicines so you can improve adherence over time. Support your routine with healthy meals, proper sleep, and hydration. If you are uncertain about any symptom or missed-dose decision, consult a doctor.';
-  }
-
-  String _riskLevel(double adherence) {
-    if (adherence >= 80) return 'LOW';
-    if (adherence >= 50) return 'MEDIUM';
-    return 'HIGH';
   }
 
   void _updateStatus(String status, void Function(String status)? onProgress) {

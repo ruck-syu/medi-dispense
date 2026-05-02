@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../models/models.dart';
+import '../providers/bluetooth_provider.dart';
 import '../providers/database_provider.dart';
 import '../services/background_dose_scheduler.dart';
 import '../services/database_helper.dart';
@@ -29,7 +30,7 @@ class _AddMedicineScreenState extends State<AddMedicineScreen> {
     'Cholesterol',
     'Custom',
   ];
-  
+
   // Form controllers
   late TextEditingController _nameController;
   late TextEditingController _dosageController;
@@ -37,15 +38,17 @@ class _AddMedicineScreenState extends State<AddMedicineScreen> {
   late TextEditingController _tabletsPerDoseController;
   late TextEditingController _timesPerDayController;
   late TextEditingController _totalDaysController;
-  
+
   // Form values
   int _tabletsPerDose = 1;
   int _timesPerDay = 1;
   int _totalDays = 7;
+  int _selectedCompartment = 1;
   DateTime? _startDate;
   List<TimeOfDay> _scheduledTimes = [];
   String _selectedPurpose = 'Custom';
   bool _isSaving = false;
+  final List<int> _compartments = [1, 2, 3, 4];
 
   List<TimeOfDay> _defaultDoseTimes(int count) {
     switch (count) {
@@ -201,6 +204,26 @@ class _AddMedicineScreenState extends State<AddMedicineScreen> {
     });
   }
 
+  bool _isCompartmentOccupied(DatabaseProvider dbProvider, int compartment) {
+    return dbProvider.schedules.any(
+      (schedule) =>
+          schedule.isActive == 1 && schedule.compartment == compartment,
+    );
+  }
+
+  void _selectFirstFreeCompartmentIfNeeded(DatabaseProvider dbProvider) {
+    if (!_isCompartmentOccupied(dbProvider, _selectedCompartment)) {
+      return;
+    }
+
+    for (final compartment in _compartments) {
+      if (!_isCompartmentOccupied(dbProvider, compartment)) {
+        _selectedCompartment = compartment;
+        return;
+      }
+    }
+  }
+
   Future<void> _saveMedicine() async {
     if (_isSaving) return;
     if (!_formKey.currentState!.validate()) {
@@ -226,11 +249,29 @@ class _AddMedicineScreenState extends State<AddMedicineScreen> {
 
     _normalizeScheduledTimes(targetCount: _timesPerDay);
 
+    final dbProvider = Provider.of<DatabaseProvider>(context, listen: false);
+    final isCompartmentOccupied = _isCompartmentOccupied(
+      dbProvider,
+      _selectedCompartment,
+    );
+    if (isCompartmentOccupied) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Compartment $_selectedCompartment is already in use'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      setState(() {
+        _isSaving = false;
+      });
+      return;
+    }
+
     final purposeText = _purposeController.text.trim();
     final effectivePurpose = purposeText.isNotEmpty
         ? purposeText
         : (_selectedPurpose == 'Custom' ? 'General' : _selectedPurpose);
-    
+
     if (_scheduledTimes.length != _timesPerDay) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -260,8 +301,8 @@ class _AddMedicineScreenState extends State<AddMedicineScreen> {
     );
 
     try {
+      final btProvider = Provider.of<BluetoothProvider>(context, listen: false);
       // Save medicine to database
-      final dbProvider = Provider.of<DatabaseProvider>(context, listen: false);
       final savedMedicine = await dbProvider.addMedicine(medicine);
 
       // Save selected times as active schedules
@@ -274,10 +315,18 @@ class _AddMedicineScreenState extends State<AddMedicineScreen> {
           Schedule(
             medicineId: savedMedicine.id!,
             time: timeString,
-            compartment: i + 1,
+            compartment: _selectedCompartment,
             isActive: 1,
           ),
         );
+
+        // Push schedule to Arduino when connected.
+        if (btProvider.isConnected) {
+          await btProvider.addScheduleToDevice(
+            timeString,
+            _selectedCompartment,
+          );
+        }
       }
 
       // Generate dose records from the saved schedule rows
@@ -292,7 +341,11 @@ class _AddMedicineScreenState extends State<AddMedicineScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('${savedMedicine.name} added successfully!'),
+          content: Text(
+            btProvider.isConnected
+                ? '${savedMedicine.name} added and synced to device!'
+                : '${savedMedicine.name} added locally. Connect device to sync schedules.',
+          ),
           backgroundColor: Colors.green,
         ),
       );
@@ -316,11 +369,11 @@ class _AddMedicineScreenState extends State<AddMedicineScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final dbProvider = Provider.of<DatabaseProvider>(context);
+    _selectFirstFreeCompartmentIfNeeded(dbProvider);
+
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Add Medicine'),
-        elevation: 0,
-      ),
+      appBar: AppBar(title: const Text('Add Medicine'), elevation: 0),
       body: Form(
         key: _formKey,
         child: SingleChildScrollView(
@@ -430,6 +483,53 @@ class _AddMedicineScreenState extends State<AddMedicineScreen> {
                   }
                   return null;
                 },
+              ),
+              const SizedBox(height: 20),
+
+              // Compartment
+              const Text(
+                'Compartment (Servo 1-4)',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+              ),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<int>(
+                initialValue: _selectedCompartment,
+                decoration: InputDecoration(
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                items: _compartments.map((compartment) {
+                  final occupied = _isCompartmentOccupied(
+                    dbProvider,
+                    compartment,
+                  );
+                  return DropdownMenuItem<int>(
+                    value: compartment,
+                    enabled: !occupied,
+                    child: Text(
+                      occupied
+                          ? 'Compartment $compartment (In Use)'
+                          : 'Compartment $compartment',
+                      style: TextStyle(color: occupied ? Colors.grey : null),
+                    ),
+                  );
+                }).toList(),
+                onChanged: (value) {
+                  if (value == null) return;
+                  setState(() {
+                    _selectedCompartment = value;
+                  });
+                },
+              ),
+              const SizedBox(height: 8),
+              Text(
+                _compartments.every(
+                      (comp) => _isCompartmentOccupied(dbProvider, comp),
+                    )
+                    ? 'All compartments are currently in use.'
+                    : 'Choose a free compartment for this medicine.',
+                style: const TextStyle(fontSize: 12, color: Colors.grey),
               ),
               const SizedBox(height: 20),
 
@@ -650,8 +750,8 @@ class _AddMedicineScreenState extends State<AddMedicineScreen> {
                             fontWeight: FontWeight.bold,
                           ),
                         ),
-                  ),
                 ),
+              ),
               const SizedBox(height: 16),
             ],
           ),
